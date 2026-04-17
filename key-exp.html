@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AES-128 Key Expansion Simulator</title>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=DM+Mono:wght@400;500;600&family=Playfair+Display:wght@700;800&display=swap');
+:root {
+  --bg:       #0a0a0f;
+  --bg2:      #111118;
+  --bg3:      #16161f;
+  --border:   #1e1e2e;
+  --border2:  #2a2a3e;
+  --text:     #e8e8f0;
+  --text2:    #7878a0;
+  --text3:    #3a3a5a;
+
+  --gold:     #f5c842;
+  --gold2:    #1a1500;
+  --orange:   #f58b42;
+  --orange2:  #1a0c00;
+  --teal:     #42d4c8;
+  --teal2:    #001a18;
+  --rose:     #f542a8;
+  --rose2:    #1a0011;
+  --violet:   #9b42f5;
+  --violet2:  #0d0018;
+  --green:    #42f57e;
+  --green2:   #001a0a;
+
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── SCANLINES + NOISE ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── HEADER ── */
+header {
+  border-bottom: 1px solid var(--border2);
+  padding: 28px 40px 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  background: var(--bg2);
+  position: relative;
+  overflow: hidden;
+}
+header::after {
+  content: 'KEY EXPANSION';
+  position: absolute;
+  right: -10px; top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 120px;
+  font-weight: 700;
+  color: rgba(245,200,66,0.03);
+  letter-spacing: -4px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.hdr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gold2);
+  border: 1px solid rgba(245,200,66,0.3);
+  color: var(--gold);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 5px 14px;
+  border-radius: 3px;
+  margin-bottom: 10px;
+}
+.hdr-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: pulse 1.4s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+header h1 {
+  font-family: var(--sans);
+  font-size: clamp(24px, 4vw, 42px);
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+header h1 span { color: var(--gold); }
+
+.hdr-meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.8;
+}
+
+/* ── MAIN LAYOUT ── */
+.main {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  min-height: calc(100vh - 110px);
+}
+@media(max-width: 900px) { .main { grid-template-columns: 1fr; } }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 28px 24px;
+  background: var(--bg2);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+
+.key-input-wrap {
+  position: relative;
+}
+.key-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--gold);
+  letter-spacing: 1px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  text-transform: uppercase;
+}
+.key-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(245,200,66,0.1);
+}
+.key-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border-radius: 3px;
+}
+.ks-ok  { background: var(--green2); color: var(--green); border: 1px solid rgba(66,245,126,0.25); }
+.ks-err { background: var(--rose2);  color: var(--rose);  border: 1px solid rgba(245,66,168,0.25); }
+
+.presets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.preset-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  line-height: 1.4;
+}
+.preset-btn:hover { border-color: var(--gold); color: var(--gold); background: var(--gold2); }
+.preset-btn b { display: block; font-size: 10px; color: var(--text3); margin-bottom: 2px; letter-spacing: 1px; }
+
+.run-btn {
+  width: 100%;
+  background: var(--gold);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  padding: 13px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.run-btn:hover { background: #ffd95a; box-shadow: 0 0 28px rgba(245,200,66,0.35); }
+.run-btn:active { transform: scale(0.98); }
+
+/* speed control */
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.speed-row input[type=range] {
+  flex: 1;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.speed-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gold);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* legend */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.leg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text2);
+}
+.leg-dot {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── CONTENT ── */
+.content {
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+@media(max-width: 700px) { .content { padding: 16px; } }
+
+/* ── W-ARRAY DISPLAY ── */
+.w-array-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.w-array-title {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--text2);
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.w-array-body {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+}
+.w-word {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: var(--bg);
+  transition: all 0.3s;
+  position: relative;
+}
+.w-word .widx {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.w-word .wbytes {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 1px;
+  display: flex;
+  gap: 3px;
+}
+.w-word .wbytes span {
+  padding: 2px 3px;
+  border-radius: 2px;
+}
+
+/* word states */
+.w-word.state-original { border-color: rgba(245,200,66,0.4); background: var(--gold2); }
+.w-word.state-original .widx { color: var(--gold); }
+.w-word.state-original .wbytes { color: var(--gold); }
+
+.w-word.state-new { border-color: rgba(66,245,126,0.4); background: var(--green2); }
+.w-word.state-new .widx { color: var(--green); }
+.w-word.state-new .wbytes { color: var(--green); }
+
+.w-word.state-active {
+  border-color: var(--teal);
+  background: var(--teal2);
+  box-shadow: 0 0 18px rgba(66,212,200,0.2);
+  transform: scale(1.03);
+  z-index: 2;
+}
+.w-word.state-active .widx { color: var(--teal); }
+.w-word.state-active .wbytes { color: var(--teal); }
+
+.w-word.state-src { border-color: rgba(155,66,245,0.5); background: var(--violet2); }
+.w-word.state-src .widx { color: var(--violet); }
+.w-word.state-src .wbytes { color: var(--violet); }
+
+.w-word.state-prev { border-color: rgba(245,139,66,0.4); background: var(--orange2); }
+.w-word.state-prev .widx { color: var(--orange); }
+.w-word.state-prev .wbytes { color: var(--orange); }
+
+.rk-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  background: rgba(245,200,66,0.15);
+  color: var(--gold);
+  border: 1px solid rgba(245,200,66,0.25);
+}
+
+/* ── STEP PANEL ── */
+.step-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 320px;
+}
+.step-panel-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.step-counter {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text2);
+}
+.step-counter em { color: var(--gold); font-style: normal; font-weight: 700; }
+
+.progress-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--orange));
+  border-radius: 2px;
+  transition: width 0.3s;
+  width: 0%;
+}
+
+.step-body { padding: 20px 22px; }
+
+/* ── COMPUTATION CARD ── */
+.comp-card {
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.comp-head {
+  padding: 9px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.comp-body { padding: 14px 16px; }
+
+.cc-rotword .comp-head { background: rgba(155,66,245,0.12); color: var(--violet); border-bottom: 1px solid rgba(155,66,245,0.2); }
+.cc-subword .comp-head { background: rgba(66,212,200,0.1);  color: var(--teal);   border-bottom: 1px solid rgba(66,212,200,0.2);  }
+.cc-rcon    .comp-head { background: rgba(245,139,66,0.1);  color: var(--orange); border-bottom: 1px solid rgba(245,139,66,0.2);  }
+.cc-xor4    .comp-head { background: rgba(245,66,168,0.1);  color: var(--rose);   border-bottom: 1px solid rgba(245,66,168,0.2);  }
+.cc-result  .comp-head { background: rgba(66,245,126,0.1);  color: var(--green);  border-bottom: 1px solid rgba(66,245,126,0.2);  }
+.cc-simple  .comp-head { background: rgba(245,200,66,0.08); color: var(--gold);   border-bottom: 1px solid rgba(245,200,66,0.15); }
+
+/* byte-transform row */
+.byte-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 2;
+}
+.byte-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 32px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid;
+  letter-spacing: 0.5px;
+  padding: 0 6px;
+}
+.bb-gold   { background: var(--gold2);   border-color: rgba(245,200,66,0.4);  color: var(--gold);   }
+.bb-violet { background: var(--violet2); border-color: rgba(155,66,245,0.4);  color: var(--violet); }
+.bb-teal   { background: var(--teal2);   border-color: rgba(66,212,200,0.4);  color: var(--teal);   }
+.bb-orange { background: var(--orange2); border-color: rgba(245,139,66,0.4);  color: var(--orange); }
+.bb-rose   { background: var(--rose2);   border-color: rgba(245,66,168,0.4);  color: var(--rose);   }
+.bb-green  { background: var(--green2);  border-color: rgba(66,245,126,0.4);  color: var(--green);  }
+.bb-gray   { background: var(--bg3);     border-color: var(--border2);        color: var(--text2);  }
+
+.op-sym {
+  color: var(--text3);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 0 2px;
+}
+.eq-sym { color: var(--gold); font-size: 16px; font-weight: 700; }
+
+/* xor table */
+.xor-table {
+  font-family: var(--mono);
+  font-size: 12px;
+  border-collapse: collapse;
+  width: 100%;
+}
+.xor-table td {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+.xor-table .row-label {
+  color: var(--text3);
+  font-size: 10px;
+  letter-spacing: 1px;
+  background: var(--bg3);
+  min-width: 80px;
+}
+.xor-table .b-gold   { color: var(--gold);   background: rgba(245,200,66,0.06);  }
+.xor-table .b-violet { color: var(--violet); background: rgba(155,66,245,0.06);  }
+.xor-table .b-orange { color: var(--orange); background: rgba(245,139,66,0.06);  }
+.xor-table .b-green  { color: var(--green);  background: rgba(66,245,126,0.06);  font-weight: 700; }
+.xor-divider td { border-top: 2px solid var(--border2); padding-top: 8px; }
+
+/* ── ROUND KEY DISPLAY ── */
+.rkeys-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.rkeys-title {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--text2);
+  background: var(--bg3);
+}
+.rkeys-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.rkey-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  transition: all 0.2s;
+  opacity: 0.3;
+}
+.rkey-row.revealed {
+  opacity: 1;
+  animation: rkReveal 0.4s ease;
+}
+@keyframes rkReveal { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
+.rkey-row.rk-active {
+  border-color: var(--gold);
+  background: var(--gold2);
+  box-shadow: 0 0 14px rgba(245,200,66,0.15);
+}
+.rk-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+  min-width: 72px;
+}
+.rk-num em { color: var(--gold); font-style: normal; }
+.rk-hex {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 1px;
+  word-break: break-all;
+  flex: 1;
+}
+.rk-hex .w0 { color: var(--gold);   }
+.rk-hex .w1 { color: var(--orange); }
+.rk-hex .w2 { color: var(--violet); }
+.rk-hex .w3 { color: var(--teal);   }
+
+/* ── CONTROLS ── */
+.step-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 700;
+}
+.ctrl-btn:hover { border-color: var(--gold); color: var(--gold); }
+.ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.ctrl-btn.primary { background: var(--gold2); border-color: var(--gold); color: var(--gold); }
+.ctrl-btn.primary:hover { box-shadow: 0 0 16px rgba(245,200,66,0.25); }
+
+/* ── STEP LOG ── */
+.step-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  max-height: 130px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.9;
+}
+.step-log .log-line { display: flex; gap: 8px; align-items: baseline; }
+.step-log .log-i  { color: var(--text3); min-width: 14px; }
+.step-log .log-msg.new { color: var(--green); }
+.step-log .log-msg.op  { color: var(--teal); }
+.step-log .log-msg.rk  { color: var(--gold); }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── TOOLTIP ── */
+.tip {
+  display: inline-block;
+  border-bottom: 1px dashed var(--text3);
+  cursor: help;
+  position: relative;
+}
+
+/* ── SBOX MINI TOOLTIP ── */
+.sbox-note {
+  background: var(--teal2);
+  border: 1px solid rgba(66,212,200,0.25);
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--teal);
+  margin-top: 8px;
+  line-height: 1.7;
+}
+
+/* ── ANIMATE IN ── */
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+.fadein { animation: fadeIn 0.35s ease forwards; }
+
+/* ── COMPLETE BANNER ── */
+.complete-banner {
+  background: linear-gradient(135deg, var(--gold2), rgba(245,200,66,0.05));
+  border: 1px solid rgba(245,200,66,0.35);
+  border-radius: 6px;
+  padding: 20px 24px;
+  text-align: center;
+  font-family: var(--mono);
+  display: none;
+}
+.complete-banner.show { display: block; animation: fadeIn 0.4s ease; }
+.complete-banner h2 { font-family: var(--sans); color: var(--gold); font-size: 22px; margin-bottom: 6px; }
+.complete-banner p  { color: var(--text2); font-size: 13px; }
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 13px;
+  gap: 10px;
+  text-align: center;
+}
+.empty-state .ik { font-size: 36px; opacity: 0.4; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="hdr-badge">AES-128 · Key Schedule</div>
+    <h1>Key <span>Expansion</span><br>Simulator</h1>
+  </div>
+  <div class="hdr-meta">
+    128-bit key → 11 round keys<br>
+    W[0..3] → W[0..43] (44 words)<br>
+    Each word = 4 bytes = 32 bits
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <div>
+      <div class="label">Input Key (32 hex chars)</div>
+      <div class="key-input-wrap">
+        <input class="key-input" id="keyInput" type="text"
+          value="2B7E151628AED2A6ABF7158809CF4F3C"
+          maxlength="32" spellcheck="false"
+          oninput="validateKey()" placeholder="32 hex digits">
+      </div>
+      <div class="key-status ks-ok" id="keyStatus">✓ Valid 128-bit key (32 hex chars)</div>
+    </div>
+
+    <div>
+      <div class="label">Presets</div>
+      <div class="presets-grid">
+        <button class="preset-btn" onclick="setKey('2B7E151628AED2A6ABF7158809CF4F3C')">
+          <b>FIPS-197</b>2B7E1516…CF4F3C
+        </button>
+        <button class="preset-btn" onclick="setKey('000102030405060708090A0B0C0D0E0F')">
+          <b>Sequential</b>0001…0E0F
+        </button>
+        <button class="preset-btn" onclick="setKey('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')">
+          <b>All FF</b>FFFF…FFFF
+        </button>
+        <button class="preset-btn" onclick="setKey('00000000000000000000000000000000')">
+          <b>All 00</b>0000…0000
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="label">Animation Speed</div>
+      <div class="speed-row">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">SLOW</span>
+        <input type="range" id="speedSlider" min="200" max="2000" value="800" step="100"
+          oninput="updateSpeed()">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">FAST</span>
+      </div>
+      <div style="text-align:center;" class="speed-val" id="speedVal">800ms / step</div>
+    </div>
+
+    <button class="run-btn" onclick="startExpansion()">
+      ▶ &nbsp;EXPAND KEY
+    </button>
+
+    <div>
+      <div class="label">Colour Legend</div>
+      <div class="legend">
+        <div class="leg-item"><div class="leg-dot" style="background:var(--gold);"></div>Original key word (W[0]–W[3])</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--violet);"></div>Source W[i−1] being transformed</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--orange);"></div>W[i−4] used for final XOR</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--teal);"></div>Current output word W[i]</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--green);"></div>Completed words</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── CONTENT ── -->
+  <div class="content">
+
+    <!-- W array -->
+    <div class="w-array-section">
+      <div class="w-array-title">
+        <span>W[ ] — WORD ARRAY (44 words × 4 bytes)</span>
+        <span id="wArrayCount" style="color:var(--text3);">0 / 44 generated</span>
+      </div>
+      <div class="w-array-body" id="wArray"></div>
+    </div>
+
+    <!-- Step controls + panel -->
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <div class="step-controls">
+        <button class="ctrl-btn" id="btnPrev" onclick="stepPrev()" disabled>◀ PREV</button>
+        <button class="ctrl-btn primary" id="btnPlay" onclick="togglePlay()">▶ PLAY</button>
+        <button class="ctrl-btn" id="btnNext" onclick="stepNext()" disabled>NEXT ▶</button>
+        <button class="ctrl-btn" id="btnReset" onclick="resetAll()" disabled>↺ RESET</button>
+      </div>
+      <div style="flex:1;">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div class="step-counter">Step <em id="stepNum">—</em> / <em id="stepTotal">—</em></div>
+    </div>
+
+    <div class="step-panel">
+      <div class="step-panel-header">
+        <span style="font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--text2);">CURRENT OPERATION</span>
+      </div>
+      <div class="step-body" id="stepBody">
+        <div class="empty-state">
+          <div class="ik">🗝</div>
+          <div>Enter a key and press<br><strong style="color:var(--gold);">EXPAND KEY</strong> to start the simulation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Round keys -->
+    <div class="rkeys-section">
+      <div class="rkeys-title">ROUND KEYS — 11 × 16 bytes (revealed as computed)</div>
+      <div class="rkeys-body" id="rkBody"></div>
+    </div>
+
+    <!-- Complete banner -->
+    <div class="complete-banner" id="completeBanner">
+      <h2>✓ Key Expansion Complete</h2>
+      <p>All 44 words generated → 11 round keys (Round Key 0 through Round Key 10)</p>
+    </div>
+
+    <!-- Step log -->
+    <div>
+      <div class="label">Step Log</div>
+      <div class="step-log" id="stepLog">
+        <div style="color:var(--text3);font-size:11px;">// Waiting for key expansion to start…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// AES S-BOX
+// ══════════════════════════════════════════════
+const SBOX = [
+  0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
+  0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
+  0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
+  0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,
+  0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,
+  0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,
+  0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,
+  0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,
+  0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,
+  0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,
+  0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,
+  0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,
+  0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,
+  0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,
+  0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
+  0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
+];
+
+const RCON_VALS = [0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36];
+
+const H  = n => n.toString(16).toUpperCase().padStart(2,'0');
+const H4 = w => w.map(H).join('');
+
+function rotWord(w) { return [w[1],w[2],w[3],w[0]]; }
+function subWord(w) { return w.map(b => SBOX[b]); }
+function xorWord(a,b) { return a.map((v,i) => v ^ b[i]); }
+
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let W = [];            // array of 44 words, each word = [b0,b1,b2,b3]
+let steps = [];        // pre-computed step descriptors
+let curStep = -1;
+let playing = false;
+let playTimer = null;
+let animSpeed = 800;
+
+// ══════════════════════════════════════════════
+// KEY VALIDATION
+// ══════════════════════════════════════════════
+function validateKey() {
+  const v = document.getElementById('keyInput').value.replace(/\s/g,'');
+  const ok = /^[0-9a-fA-F]{32}$/.test(v);
+  const st = document.getElementById('keyStatus');
+  if (ok) {
+    st.className = 'key-status ks-ok';
+    st.textContent = '✓ Valid 128-bit key (32 hex chars)';
+  } else {
+    st.className = 'key-status ks-err';
+    st.textContent = `✗ Need exactly 32 hex chars (got ${v.length})`;
+  }
+  return ok;
+}
+
+function setKey(k) {
+  document.getElementById('keyInput').value = k;
+  validateKey();
+}
+
+function updateSpeed() {
+  const raw = parseInt(document.getElementById('speedSlider').value);
+  animSpeed = 2200 - raw; // invert so right = faster
+  document.getElementById('speedVal').textContent = animSpeed + 'ms / step';
+}
+
+// ══════════════════════════════════════════════
+// PRE-COMPUTE ALL STEPS
+// ══════════════════════════════════════════════
+function buildSteps(keyHex) {
+  const kb = [];
+  for (let i = 0; i < 32; i += 2) kb.push(parseInt(keyHex.slice(i,i+2), 16));
+
+  const words = [];
+  for (let i = 0; i < 4; i++) words.push([kb[i*4], kb[i*4+1], kb[i*4+2], kb[i*4+3]]);
+
+  const allSteps = [];
+
+  // Step 0: load original key
+  allSteps.push({
+    type: 'init',
+    words: words.map(w => [...w]),
+    description: 'Load the 128-bit key as 4 words W[0]–W[3]'
+  });
+
+  // Steps for W[4]..W[43]
+  for (let i = 4; i < 44; i++) {
+    const temp0 = [...words[i-1]];
+    const isSpecial = (i % 4 === 0);
+
+    if (isSpecial) {
+      const rotated  = rotWord(temp0);
+      const subbed   = subWord(rotated);
+      const rconVal  = RCON_VALS[i/4];
+      const rconWord = [rconVal, 0x00, 0x00, 0x00];
+      const xored    = xorWord(subbed, rconWord);
+      const wi_4     = words[i-4];
+      const final    = xorWord(wi_4, xored);
+      words.push([...final]);
+
+      allSteps.push({
+        type: 'special', i,
+        temp0, rotated, subbed, rconVal, rconWord, xored, wi_4: [...wi_4], final,
+        description: `W[${i}]: special (i%4==0) — RotWord → SubWord → XOR Rcon → XOR W[${i-4}]`
+      });
+    } else {
+      const wi_4  = words[i-4];
+      const final = xorWord(wi_4, temp0);
+      words.push([...final]);
+
+      allSteps.push({
+        type: 'simple', i,
+        temp0, wi_4: [...wi_4], final,
+        description: `W[${i}]: simple — W[${i}] = W[${i-4}] ⊕ W[${i-1}]`
+      });
+    }
+  }
+
+  return { steps: allSteps, finalWords: words };
+}
+
+// ══════════════════════════════════════════════
+// RENDER W-ARRAY
+// ══════════════════════════════════════════════
+function renderWArray(revealed, activeIdx, srcIdx, prevIdx) {
+  const el = document.getElementById('wArray');
+  el.innerHTML = '';
+  const countEl = document.getElementById('wArrayCount');
+  countEl.textContent = `${revealed} / 44 generated`;
+
+  for (let i = 0; i < 44; i++) {
+    const div = document.createElement('div');
+    div.className = 'w-word';
+    div.id = `w${i}`;
+
+    // Determine state
+    if (i === activeIdx) div.classList.add('state-active');
+    else if (i === srcIdx) div.classList.add('state-src');
+    else if (i === prevIdx) div.classList.add('state-prev');
+    else if (i < 4 && W[i]) div.classList.add('state-original');
+    else if (W[i]) div.classList.add('state-new');
+
+    const roundKey = Math.floor(i / 4);
+    const inRound = i < revealed;
+
+    // Index label + round key badge
+    let badge = '';
+    if (i % 4 === 0) badge = `<span class="rk-badge">RK${roundKey}</span>`;
+
+    const bytesHtml = W[i] && inRound
+      ? W[i].map(b => `<span>${H(b)}</span>`).join('')
+      : `<span style="color:var(--text3)">??</span><span style="color:var(--text3)">??</span><span style="color:var(--text3)">??</span><span style="color:var(--text3)">??</span>`;
+
+    div.innerHTML = `
+      <div class="widx"><span>W[${i}]</span>${badge}</div>
+      <div class="wbytes">${bytesHtml}</div>
+    `;
+    el.appendChild(div);
+  }
+
+  // Scroll active into view
+  const activeEl = document.getElementById(`w${activeIdx}`);
+  if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ══════════════════════════════════════════════
+// RENDER STEP PANEL
+// ══════════════════════════════════════════════
+function renderStep(stepIdx) {
+  if (stepIdx < 0 || stepIdx >= steps.length) return;
+  const s = steps[stepIdx];
+  const body = document.getElementById('stepBody');
+
+  // Update progress
+  document.getElementById('stepNum').textContent = stepIdx + 1;
+  document.getElementById('stepTotal').textContent = steps.length;
+  document.getElementById('progressFill').style.width = ((stepIdx+1)/steps.length*100) + '%';
+
+  if (s.type === 'init') {
+    body.innerHTML = `
+      <div class="fadein">
+        <div class="comp-card cc-simple">
+          <div class="comp-head">📦 LOAD KEY — W[0..3] = original 128-bit key, split into 4 words</div>
+          <div class="comp-body">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:12px;">
+              The 16 key bytes are split into 4 words of 4 bytes each (column-by-column):
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              ${s.words.map((w,i) => `
+                <div class="byte-row">
+                  <span style="font-family:var(--mono);color:var(--text3);min-width:44px;font-size:11px;">W[${i}] =</span>
+                  ${w.map(b => `<span class="byte-box bb-gold">${H(b)}</span>`).join('')}
+                  <span style="font-family:var(--mono);font-size:12px;color:var(--text2);margin-left:6px;">[bytes ${i*4}–${i*4+3}]</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    addLog(`INIT`, `W[0..3] loaded from key`, 'rk');
+    return;
+  }
+
+  if (s.type === 'simple') {
+    body.innerHTML = `
+      <div class="fadein">
+        <div class="comp-card cc-simple">
+          <div class="comp-head">⊕ SIMPLE XOR — W[${s.i}] = W[${s.i-4}] ⊕ W[${s.i-1}]  &nbsp;(i%4 ≠ 0, no rotation)</div>
+          <div class="comp-body">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:10px;">
+              Since <strong style="color:var(--gold);">${s.i} % 4 = ${s.i % 4}</strong> (not zero), we skip all transforms and directly XOR:
+            </div>
+            ${renderXorTable(s.wi_4, s.temp0, s.final, `W[${s.i-4}]`, `W[${s.i-1}]`, `W[${s.i}]`)}
+          </div>
+        </div>
+      </div>`;
+    addLog(`W[${s.i}]`, `= W[${s.i-4}] ⊕ W[${s.i-1}] = ${H4(s.final)}`, 'new');
+    return;
+  }
+
+  if (s.type === 'special') {
+    body.innerHTML = `
+      <div class="fadein" style="display:flex;flex-direction:column;gap:10px;">
+
+        <div class="comp-card cc-rotword">
+          <div class="comp-head">① ROTWORD — Rotate word left by 1 byte &nbsp;[a,b,c,d] → [b,c,d,a]</div>
+          <div class="comp-body">
+            <div class="byte-row">
+              <span style="color:var(--text3);font-size:11px;font-family:var(--mono);min-width:80px;">W[${s.i-1}]</span>
+              ${s.temp0.map(b => `<span class="byte-box bb-violet">${H(b)}</span>`).join('')}
+              <span class="op-sym">→</span>
+              ${s.rotated.map(b => `<span class="byte-box bb-violet">${H(b)}</span>`).join('')}
+              <span style="color:var(--text3);font-size:11px;font-family:var(--mono);">rotate left 1</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="comp-card cc-subword">
+          <div class="comp-head">② SUBWORD — Apply AES S-Box to each of the 4 bytes independently</div>
+          <div class="comp-body">
+            <div class="byte-row" style="flex-wrap:wrap;">
+              ${s.rotated.map((b,idx) => `
+                <span class="byte-box bb-teal">${H(b)}</span>
+                <span class="op-sym" style="font-size:12px;">→</span>
+                <span style="font-family:var(--mono);font-size:10px;color:var(--text3);">S[${H(b)}]</span>
+                <span class="op-sym" style="font-size:12px;">=</span>
+                <span class="byte-box bb-teal">${H(s.subbed[idx])}</span>
+                ${idx < 3 ? '<span style="color:var(--border2);padding:0 6px;">|</span>' : ''}
+              `).join('')}
+            </div>
+            <div class="sbox-note">S-Box lookup: each byte is replaced using the AES substitution table (GF(2⁸) multiplicative inverse + affine transform)</div>
+          </div>
+        </div>
+
+        <div class="comp-card cc-rcon">
+          <div class="comp-head">③ XOR RCON — XOR with round constant Rcon[${s.i/4}] = [${H(s.rconVal)}, 00, 00, 00]</div>
+          <div class="comp-body">
+            ${renderXorTable(s.subbed, s.rconWord, s.xored, `SubWord`, `Rcon[${s.i/4}]`, `temp`)}
+            <div class="sbox-note">Rcon[${s.i/4}] = ${H(s.rconVal)} in hex. Only the first byte is non-zero. Rcon values are powers of 2 in GF(2⁸).</div>
+          </div>
+        </div>
+
+        <div class="comp-card cc-xor4">
+          <div class="comp-head">④ XOR W[i−4] — Final XOR with W[${s.i-4}] to produce W[${s.i}]</div>
+          <div class="comp-body">
+            ${renderXorTable(s.wi_4, s.xored, s.final, `W[${s.i-4}]`, `temp`, `W[${s.i}]`)}
+          </div>
+        </div>
+
+      </div>`;
+    addLog(`W[${s.i}]`, `= RotWord→SubWord→XOR Rcon[${s.i/4}]→XOR W[${s.i-4}] = ${H4(s.final)}`, 'op');
+    return;
+  }
+}
+
+function renderXorTable(a, b, result, aLabel, bLabel, resLabel) {
+  const byteLabels = ['[0]','[1]','[2]','[3]'];
+  return `
+    <table class="xor-table">
+      <tr>
+        <td class="row-label">${aLabel}</td>
+        ${a.map(v => `<td class="b-gold">${H(v)}</td>`).join('')}
+      </tr>
+      <tr>
+        <td class="row-label">${bLabel}</td>
+        ${b.map(v => `<td class="b-violet">${H(v)}</td>`).join('')}
+      </tr>
+      <tr>
+        <td class="row-label" style="font-size:9px;letter-spacing:1px;">XOR (⊕)</td>
+        ${byteLabels.map(l => `<td style="color:var(--text3);font-size:10px;">${l}</td>`).join('')}
+      </tr>
+      <tr class="xor-divider">
+        <td class="row-label" style="color:var(--green);">${resLabel}</td>
+        ${result.map(v => `<td class="b-green">${H(v)}</td>`).join('')}
+      </tr>
+    </table>
+    <div style="font-family:var(--mono);font-size:12px;color:var(--text2);margin-top:8px;">
+      ${a.map((v,i) => `${H(v)} ⊕ ${H(b[i])} = <span style="color:var(--green);">${H(result[i])}</span>`).join('  &nbsp;|&nbsp;  ')}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════
+// ROUND KEYS PANEL
+// ══════════════════════════════════════════════
+function renderRoundKeys(revealed) {
+  const body = document.getElementById('rkBody');
+  body.innerHTML = '';
+  for (let rk = 0; rk <= 10; rk++) {
+    const startW = rk * 4;
+    const ready = W[startW + 3] !== undefined && revealed > startW + 3;
+    const active = revealed > startW && revealed <= startW + 4;
+
+    const div = document.createElement('div');
+    div.className = 'rkey-row' + (ready || active ? ' revealed' : '') + (active ? ' rk-active' : '');
+
+    if (ready || active) {
+      const wordColors = ['w0','w1','w2','w3'];
+      const hexParts = [0,1,2,3].map(j => {
+        if (!W[startW+j]) return `<span style="color:var(--text3);">????????</span>`;
+        return `<span class="${wordColors[j]}">${H4(W[startW+j])}</span>`;
+      }).join(' ');
+      div.innerHTML = `
+        <span class="rk-num"><em>RK ${rk}</em>&nbsp;W[${startW}..${startW+3}]</span>
+        <span class="rk-hex">${hexParts}</span>`;
+    } else {
+      div.innerHTML = `
+        <span class="rk-num">RK ${rk}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text3);">not yet generated…</span>`;
+    }
+    body.appendChild(div);
+  }
+}
+
+// ══════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════
+let logLines = [];
+function addLog(label, msg, cls) {
+  logLines.push({ label, msg, cls });
+  if (logLines.length > 40) logLines.shift();
+  const el = document.getElementById('stepLog');
+  el.innerHTML = logLines.map(l =>
+    `<div class="log-line"><span class="log-i">&gt;</span><span style="color:var(--text3);min-width:48px;font-size:10px;">${l.label}</span><span class="log-msg ${l.cls}">${l.msg}</span></div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ══════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════
+function applyStep(idx) {
+  if (idx < 0 || idx >= steps.length) return;
+  curStep = idx;
+  const s = steps[idx];
+
+  // Rebuild W up to this step
+  W = [];
+  for (let k = 0; k <= idx; k++) {
+    const st = steps[k];
+    if (st.type === 'init') {
+      for (let j = 0; j < 4; j++) W[j] = [...st.words[j]];
+    } else {
+      W[st.i] = [...st.final];
+    }
+  }
+
+  const revealed = W.filter(Boolean).length;
+  let activeIdx = -1, srcIdx = -1, prevIdx = -1;
+  if (s.type !== 'init') {
+    activeIdx = s.i;
+    srcIdx = s.i - 1;
+    prevIdx = s.i - 4;
+  }
+
+  renderWArray(revealed, activeIdx, srcIdx, prevIdx);
+  renderStep(idx);
+  renderRoundKeys(revealed);
+
+  document.getElementById('btnPrev').disabled = idx <= 0;
+  document.getElementById('btnNext').disabled = idx >= steps.length - 1;
+  document.getElementById('btnReset').disabled = false;
+
+  if (idx === steps.length - 1) {
+    document.getElementById('completeBanner').classList.add('show');
+    stopPlay();
+  }
+}
+
+function stepNext() {
+  if (curStep < steps.length - 1) applyStep(curStep + 1);
+}
+function stepPrev() {
+  if (curStep > 0) applyStep(curStep - 1);
+}
+
+function togglePlay() {
+  if (playing) stopPlay(); else startPlay();
+}
+function startPlay() {
+  if (curStep >= steps.length - 1) return;
+  playing = true;
+  document.getElementById('btnPlay').textContent = '⏸ PAUSE';
+  document.getElementById('btnPlay').classList.add('primary');
+  tick();
+}
+function stopPlay() {
+  playing = false;
+  clearTimeout(playTimer);
+  document.getElementById('btnPlay').textContent = '▶ PLAY';
+}
+function tick() {
+  if (!playing) return;
+  if (curStep >= steps.length - 1) { stopPlay(); return; }
+  stepNext();
+  playTimer = setTimeout(tick, animSpeed);
+}
+
+function resetAll() {
+  stopPlay();
+  curStep = -1;
+  W = [];
+  document.getElementById('stepBody').innerHTML = `
+    <div class="empty-state">
+      <div class="ik">🗝</div>
+      <div>Press <strong style="color:var(--gold);">EXPAND KEY</strong> to re-run the simulation</div>
+    </div>`;
+  document.getElementById('completeBanner').classList.remove('show');
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('stepNum').textContent = '—';
+  document.getElementById('stepTotal').textContent = '—';
+  document.getElementById('btnPrev').disabled = true;
+  document.getElementById('btnNext').disabled = true;
+  document.getElementById('btnReset').disabled = true;
+  renderWArray(0,-1,-1,-1);
+  renderRoundKeys(0);
+  logLines = [];
+  document.getElementById('stepLog').innerHTML = '<div style="color:var(--text3);font-size:11px;">// Reset. Enter a key and press EXPAND KEY.</div>';
+}
+
+// ══════════════════════════════════════════════
+// ENTRY POINT
+// ══════════════════════════════════════════════
+function startExpansion() {
+  if (!validateKey()) return;
+  stopPlay();
+  const keyHex = document.getElementById('keyInput').value.replace(/\s/g,'').toUpperCase();
+  const result = buildSteps(keyHex);
+  steps = result.steps;
+  curStep = -1;
+  W = [];
+  logLines = [];
+  document.getElementById('completeBanner').classList.remove('show');
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('btnPrev').disabled = true;
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('btnReset').disabled = false;
+  document.getElementById('stepNum').textContent = '0';
+  document.getElementById('stepTotal').textContent = steps.length;
+
+  renderWArray(0,-1,-1,-1);
+  renderRoundKeys(0);
+  addLog('START', `Key = ${keyHex}`, 'rk');
+  applyStep(0);
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  validateKey();
+  updateSpeed();
+  renderWArray(0,-1,-1,-1);
+  renderRoundKeys(0);
+});
+</script>
+</body>
+</html>
